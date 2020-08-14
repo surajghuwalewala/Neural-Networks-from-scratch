@@ -1,2 +1,4 @@
 # Neural Networks from scratch
-Numpy implementation of Neural Networks.
+This is a very basic numpy implementation of Neural Networks.
+<br>
+Still a work in progress...
