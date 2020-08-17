@@ -1,5 +1,5 @@
 import numpy as np
-from losses import *
+from activations import *
 from metrics import *
 from tqdm import tqdm
 from sklearn.utils import shuffle
@@ -12,7 +12,7 @@ class DNN():
 
         self.input_dim = input_dim
         self.hidden_dims = hidden_dims
-        self.output_dim = num_classes
+        self.output_dim = 1 if num_classes==2 else num_classes
         self.layer_dims = [self.input_dim] + self.hidden_dims + [self.output_dim] 
         
         ## Init weights
@@ -35,14 +35,14 @@ class DNN():
         if num_classes == 2:
             self.out_loss = sigmoid()
         elif num_classes > 2:
-            self.out_loss = softmax()
+            self.out_loss = sigmoid()
         
 
     def _init_weights(self):
         """
         Initializes random weights.
         """
-        self.weights = [np.random.rand(i,j) for i,j in zip(self.layer_dims[1:], self.layer_dims[:-1])]
+        self.weights = [np.random.rand(i,j) for i,j in zip(self.layer_dims[:-1], self.layer_dims[1:])]
 
 
     def _init_bias(self):
@@ -54,8 +54,31 @@ class DNN():
         else:
             self.bias = [np.zeros((i,1)) for i in self.hidden_dims]
 
+
     def _init_layers(self):
         self.layers = [np.zeros((i,1)) for i in self.layer_dims]
+
+
+    def forward(self, input):
+
+        self.layers[0] = input
+
+        for i, W in enumerate(self.weights):
+            self.layers[i+1] =  self.loss_fn.forward(np.dot(W.T, self.layers[i]))
+
+
+    def backprop(self, error, learning_rate):
+
+        for i in reversed(range(len(self.weights))):
+            print(self.layers[i+1].shape)
+            print(self.loss_fn.backpropagation(self.layers[i+1]).shape)
+            delta = np.multiply(error, self.loss_fn.backpropagation(self.layers[i+1]))
+            print("Weight : ", i)
+            self.weights[i] += np.dot(self.layers[i], delta.T) * learning_rate
+            error = np.dot(self.weights[i], delta)
+
+        # print("Error: ", error)
+
 
     def make_batches(self, X, y, batch_size):
         num_batches = len(X)//batch_size
@@ -75,25 +98,12 @@ class DNN():
     def train_on_batch(self, batch_X, batch_y, learning_rate):
         
         for X,y in zip(batch_X, batch_y):
-            self.layers[0] = X.copy()
-
-            for i in range(len(self.weights[:-1])):
-                self.layers[i+1] = self.loss_fn.activation(np.dot( self.weights[i], self.layers[i]))
-            
-            out = self.out_loss.activation(np.dot( self.weights[-1], self.layers[-2]))
-
-            error = out - y
-
-            delta = np.dot(self.out_loss.backpropagation(out), error)
-
-            self.weights[-1] +=  learning_rate * np.dot(delta, self.layers[-2].T)
-
-            for i in reversed(range(len(self.weights) - 1 )):
-                delta = np.dot(self.weights[i+1].T, delta) * self.loss_fn.backpropagation(self.layers[i+1])
-                self.weights[i] += learning_rate * np.dot(delta, self.layers[i].T)
+            self.forward(X)
+            error = self.layers[-1] - y
+            self.backprop(error, learning_rate)
 
 
-    def train(self, X, y, val_X=None, val_y=None, batch_size = 20, n_epochs=10, learning_rate = 0.001):
+    def train(self, X, y, val_X=None, val_y=None, batch_size = 20, n_epochs=10, learning_rate = 0.01):
         """
         X = input array (num_data, data_dim)
         y = labels (num_data)
@@ -110,25 +120,22 @@ class DNN():
 
             for batch_X, batch_y in tqdm(zip(batched_X, batched_y)):
                 self.train_on_batch(batch_X, batch_y, learning_rate)
+
+            print("Training Loss: {}\tTraining Acc: {}".format(mse(y, self.predict(X)), self.evaluate(X,y)))
+
             if val_X is not None and val_y is not None:
-                print("Validation accuracy: ",self.evaluate(val_X, val_y))
+                print("Val Loss: {}\tVal Acc: {}".format(mse(val_y, self.predict(val_X)), self.evaluate(val_X, val_y)))
 
 
     def predict(self, test_X):
         preds = []
         for X in test_X:
-            self.layers[0] = X.copy()
-
-            for i in range(len(self.weights[:-1])):
-                self.layers[i+1] = self.loss_fn.activation(np.dot( self.weights[i], self.layers[i]))
-            
-            preds.append(self.out_loss.activation(np.dot( self.weights[-1], self.layers[-2])))
-
+            self.forward(X)
+            preds.append(self.layers[-1])
         return np.array(preds)
 
     def evaluate(self, test_X, test_y):
         preds = self.predict(test_X)
         preds = np.argmax(preds, axis=1)
-        return accuracy(test_y, preds)
-        
+        return mse(test_y, preds)
 
